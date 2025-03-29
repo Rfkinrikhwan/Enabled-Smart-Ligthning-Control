@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Lighting Control Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome CDN -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet" />
+    <style>
+      /* Previous CSS remains the same */
+      body {
+        font-family: "Poppins", sans-serif;
+        background: #f0f4f8;
+        perspective: 1000px;
+      }
+
+      /* 3D Neumorphic Design */
+      .neumorphic {
+        border-radius: 24px;
+        background: #f0f4f8;
+        box-shadow: 16px 16px 32px #d1d9e6, -16px -16px 32px #ffffff;
+        transition: all 0.3s ease;
+      }
+
+      .neumorphic-inset {
+        border-radius: 16px;
+        background: #f0f4f8;
+        box-shadow: inset 8px 8px 16px #d1d9e6, inset -8px -8px 16px #ffffff;
+      }
+
+      .neumorphic-button {
+        border-radius: 12px;
+        background: linear-gradient(145deg, #f0f4f8, #e6edf5);
+        box-shadow: 5px 5px 10px #d1d9e6, -5px -5px 10px #ffffff;
+        transition: all 0.2s ease;
+      }
+
+      .neumorphic-button:hover {
+        box-shadow: 8px 8px 16px #d1d9e6, -8px -8px 16px #ffffff;
+        transform: translateY(-2px);
+      }
+
+      .neumorphic-button:active {
+        box-shadow: inset 5px 5px 10px #d1d9e6, inset -5px -5px 10px #ffffff;
+        transform: translateY(0);
+      }
+
+      /* 3D Card Styles */
+      .card-3d {
+        transform-style: preserve-3d;
+        transition: all 0.5s ease;
+      }
+
+      .card-3d:hover {
+        transform: translateY(-10px) rotateX(5deg) rotateY(5deg);
+        box-shadow: 20px 20px 40px rgba(0, 0, 0, 0.1),
+          -5px -5px 20px rgba(255, 255, 255, 0.8);
+      }
+
+      /* 3D Toggle Switch */
+      .switch-3d {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+        height: 30px;
+        transform-style: preserve-3d;
+      }
+
+      .switch-3d input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .slider-3d {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #f0f4f8;
+        box-shadow: inset 3px 3px 6px #d1d9e6, inset -3px -3px 6px #ffffff;
+        transition: 0.4s;
+        border-radius: 34px;
+      }
+
+      .slider-3d:before {
+        position: absolute;
+        content: "";
+        height: 22px;
+        width: 22px;
+        left: 4px;
+        bottom: 4px;
+        background: linear-gradient(145deg, #ffffff, #e6e6e6);
+        box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2),
+          -1px -1px 2px rgba(255, 255, 255, 0.7);
+        transition: 0.4s;
+        border-radius: 50%;
+      }
+
+      input:checked + .slider-3d {
+        background: linear-gradient(145deg, #10b981, #0ea271);
+        box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.2),
+          inset -3px -3px 6px rgba(255, 255, 255, 0.1);
+      }
+
+      input:checked + .slider-3d:before {
+        transform: translateX(30px);
+      }
+
+      /* Light Icon Styles */
+      .light-icon-container {
+        position: relative;
+        transform-style: preserve-3d;
+      }
+
+      .light-icon {
+        transition: all 0.3s ease;
+      }
+
+      .light-on .light-icon {
+        color: #facc15;
+        text-shadow: 0 0 15px rgba(250, 204, 21, 0.8);
+        transform: translateZ(10px);
+      }
+
+      /* Header Animation */
+      .header-3d {
+        background: linear-gradient(90deg, #3b82f6, #10b981, #3b82f6);
+        background-size: 200% auto;
+        color: transparent;
+        -webkit-background-clip: text;
+        background-clip: text;
+        animation: gradient 3s linear infinite;
+        transform-style: preserve-3d;
+        transform: translateZ(20px);
+        /* text-shadow: 0 5px 10px rgba(0, 0, 0, 0.1),
+          0 -2px 5px rgba(255, 255, 255, 0.7); */
+      }
+
+      @keyframes gradient {
+        0% {
+          background-position: 0% 50%;
+        }
+        50% {
+          background-position: 100% 50%;
+        }
+        100% {
+          background-position: 0% 50%;
+        }
+      }
+
+      /* Slider Controls */
+      .slider-control {
+        -webkit-appearance: none;
+        width: 100%;
+        height: 10px;
+        border-radius: 5px;
+        background: #f0f4f8;
+        box-shadow: inset 3px 3px 6px #d1d9e6, inset -3px -3px 6px #ffffff;
+        outline: none;
+      }
+
+      .slider-control::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: linear-gradient(145deg, #ffffff, #e6e6e6);
+        box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2),
+          -1px -1px 2px rgba(255, 255, 255, 0.7);
+        cursor: pointer;
+      }
+
+      /* 3D Container */
+      .container-3d {
+        transform-style: preserve-3d;
+        perspective: 1000px;
+      }
+
+      /* Floating Elements */
+      .floating {
+        animation: float 6s ease-in-out infinite;
+      }
+
+      /* Light Status Badge */
+      .status-badge {
+        border-radius: 12px;
+        padding: 4px 12px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+      }
+
+      .status-on {
+        background: linear-gradient(145deg, #10b981, #0ea271);
+        color: white;
+        box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2),
+          -1px -1px 3px rgba(255, 255, 255, 0.1);
+      }
+
+      .status-off {
+        background: #f0f4f8;
+        color: #94a3b8;
+        box-shadow: 2px 2px 5px #d1d9e6, -1px -1px 3px #ffffff;
+      }
+      /* Add a color picker style */
+      .color-picker {
+        -webkit-appearance: none;
+        border: none;
+        width: 50px;
+        height: 50px;
+        cursor: pointer;
+        border-radius: 50%;
+        overflow: hidden;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      .color-picker::-webkit-color-swatch-wrapper {
+        padding: 0;
+      }
+      .color-picker::-webkit-color-swatch {
+        border: none;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <div class="container-3d min-h-screen relative z-0 py-12 px-4">
+      <div class="max-w-6xl mx-auto">
+        <header class="text-center mb-12 floating">
+          <h1 class="text-4xl md:text-5xl font-bold mb-3 header-3d">
+            Smart Lighting Control Platform
+          </h1>
+          <p class="text-slate-600 max-w-2xl mx-auto transform translate-z-10">
+            Control your home lighting system with ease. Manage individual
+            lights or use master controls for complete automation.
+          </p>
+        </header>
+
+        <div class="neumorphic p-5 mb-10">
+          <div class="flex flex-wrap items-center justify-between mb-8">
+            <h2 class="text-2xl font-semibold text-slate-800 flex items-center">
+              <i class="fa-solid fa-house-signal mr-3 text-blue-500"></i>
+              Light Controls
+            </h2>
+            <div class="flex space-x-4 mt-4 sm:mt-0">
+              <button
+                id="all-on"
+                class="neumorphic-button bg-emerald-500 hover:bg-emerald-600 text-slate-800 font-medium py-3 px-6 transition-all duration-300 flex items-center">
+                <i class="fa-solid fa-power-off mr-2"></i> All On
+              </button>
+              <button
+                id="all-off"
+                class="neumorphic-button bg-slate-500 hover:bg-slate-600 text-slate-800 font-medium py-3 px-6 transition-all duration-300 flex items-center">
+                <i class="fa-solid fa-power-off mr-2"></i> All Off
+              </button>
+            </div>
+          </div>
+
+          <div
+            id="lights-container"
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <!-- Lights will be dynamically populated here -->
+          </div>
+        </div>
+
+        <!-- Dashboard Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          <div class="card-3d neumorphic p-6 floating">
+            <div class="flex items-center justify-between">
+              <h3 class="text-lg font-semibold text-slate-800">
+                Active Lights
+              </h3>
+              <div
+                class="neumorphic-inset w-12 h-12 rounded-full flex items-center justify-center">
+                <i class="fa-solid fa-lightbulb text-blue-500"></i>
+              </div>
+            </div>
+            <p class="text-3xl font-bold mt-4" id="active-count">0</p>
+            <p class="text-sm text-slate-500 mt-1">
+              of <span id="total-lights">0</span> lights
+            </p>
+          </div>
+
+          <div
+            class="card-3d neumorphic p-6 floating"
+            style="animation-delay: 0.2s">
+            <div class="flex items-center justify-between">
+              <h3 class="text-lg font-semibold text-slate-800">Energy Usage</h3>
+              <div
+                class="neumorphic-inset w-12 h-12 rounded-full flex items-center justify-center">
+                <i class="fa-solid fa-bolt text-green-500"></i>
+              </div>
+            </div>
+            <p class="text-3xl font-bold mt-4" id="energy-usage">0 kWh</p>
+            <p class="text-sm text-slate-500 mt-1">Estimated daily usage</p>
+          </div>
+
+          <div
+            class="card-3d neumorphic p-6 floating"
+            style="animation-delay: 0.4s">
+            <div class="flex items-center justify-between">
+              <h3 class="text-lg font-semibold text-slate-800">
+                System Status
+              </h3>
+              <div
+                class="neumorphic-inset w-12 h-12 rounded-full flex items-center justify-center">
+                <i class="fa-solid fa-wifi text-purple-500"></i>
+              </div>
+            </div>
+            <p class="text-3xl font-bold mt-4" id="system-status">Loading...</p>
+            <p class="text-sm text-slate-500 mt-1" id="system-status-detail">
+              Checking systems
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        const lightsContainer = document.getElementById("lights-container");
+        const activeCount = document.getElementById("active-count");
+        const totalLightsSpan = document.getElementById("total-lights");
+        const energyUsage = document.getElementById("energy-usage");
+        const systemStatus = document.getElementById("system-status");
+        const systemStatusDetail = document.getElementById(
+          "system-status-detail"
+        );
+        const allOnButton = document.getElementById("all-on");
+        const allOffButton = document.getElementById("all-off");
+
+        // Function to create a single light card
+        function createLightCard(lamp) {
+          const card = document.createElement("div");
+          card.className = `neumorphic-inset p-6 ${
+            lamp.status === "ON" ? "light-on" : "light-off"
+          }`;
+          card.innerHTML = `
+            <div class="flex justify-between items-center mb-6">
+              <div class="flex items-center">
+                <div class="light-icon-container neumorphic-inset w-14 h-14 rounded-full flex items-center justify-center mr-4">
+                  <i class="light-icon fa-solid fa-lightbulb text-3xl ${
+                    lamp.status === "ON" ? "text-yellow-400" : "text-gray-400"
+                  }"></i>
+                </div>
+                <div>
+                  <h2 class="text-xl font-semibold text-slate-800">${`Light ${
+                    lamp.id + 1
+                  }`}</h2>
+                </div>
+              </div>
+              <div class="flex items-center">
+                <span class="status-badge ${
+                  lamp.status === "ON" ? "status-on" : "status-off"
+                } mr-3">${lamp.status}</span>
+                <label class="switch-3d">
+                  <input type="checkbox" class="light-toggle-checkbox" data-light="${
+                    lamp.id
+                  }" ${lamp.status === "ON" ? "checked" : ""} />
+                  <span class="slider-3d"></span>
+                </label>
+              </div>
+            </div>
+            <div class="flex justify-between items-center mt-6">
+              <div class="flex items-center space-x-4">
+                <input 
+                  type="color" 
+                  class="color-picker" 
+                  data-light="${lamp.id}" 
+                  value="#${rgbToHex(
+                    lamp.currentColor.r,
+                    lamp.currentColor.g,
+                    lamp.currentColor.b
+                  )}"
+                  ${lamp.status === "ON" ? "" : "disabled"}
+                />
+                <div class="text-sm text-slate-500">
+                  <span class="current-color-label">Color:</span>
+                  <span class="current-color-value">#${rgbToHex(
+                    lamp.currentColor.r,
+                    lamp.currentColor.g,
+                    lamp.currentColor.b
+                  )}</span>
+                </div>
+              </div>
+              <button
+                class="light-toggle neumorphic-button bg-blue-500 hover:bg-blue-600 text-slate-800 font-medium py-2 px-4 transition-all text-sm"
+                data-light="${lamp.id}">
+                Toggle
+              </button>
+            </div>
+          `;
+          return card;
+        }
+
+        // Convert RGB to Hex
+        function rgbToHex(r, g, b) {
+          return [r, g, b]
+            .map((x) => {
+              const hex = x.toString(16);
+              return hex.length === 1 ? "0" + hex : hex;
+            })
+            .join("");
+        }
+
+        // Convert Hex to RGB
+        function hexToRgb(hex) {
+          const bigint = parseInt(hex.slice(1), 16);
+          const r = (bigint >> 16) & 255;
+          const g = (bigint >> 8) & 255;
+          const b = bigint & 255;
+          return { r, g, b };
+        }
+
+        // Fetch lamp status
+        async function fetchLampStatus() {
+          try {
+            const response = await fetch("http://192.168.211.1/lamp/status", {
+              headers: {
+                "Content-Type": "application/json",
+              },
+            });
+            const data = await response.json();
+
+            // Clear existing lights
+            lightsContainer.innerHTML = "";
+
+            // Create light cards
+            data.lamps.forEach((lamp) => {
+              const lightCard = createLightCard(lamp);
+              lightsContainer.appendChild(lightCard);
+            });
+
+            // Update active lights count
+            const activeLights = data.lamps.filter(
+              (lamp) => lamp.status === "ON"
+            ).length;
+            activeCount.textContent = activeLights;
+            totalLightsSpan.textContent = data.lamps.length;
+
+            // Update energy usage (assuming 0.06 kWh per active light)
+            energyUsage.textContent = (activeLights * 0.06).toFixed(2) + " kWh";
+
+            // Update system status
+            systemStatus.textContent = "Online";
+            systemStatus.classList.remove("text-red-500");
+            systemStatus.classList.add("text-emerald-500");
+            systemStatusDetail.textContent = "All systems operational";
+
+            // Attach event listeners
+            attachLightControlListeners();
+          } catch (error) {
+            console.error("Error fetching lamp status:", error);
+            systemStatus.textContent = "Offline";
+            systemStatus.classList.remove("text-emerald-500");
+            systemStatus.classList.add("text-red-500");
+            systemStatusDetail.textContent = "Connection error";
+          }
+        }
+
+        // Attach event listeners to light controls
+        function attachLightControlListeners() {
+          // Light toggle buttons
+          document
+            .querySelectorAll(".light-toggle, .light-toggle-checkbox")
+            .forEach((toggle) => {
+              toggle.addEventListener("click", async function () {
+                const lightId = this.getAttribute("data-light");
+                const card = this.closest(".neumorphic-inset");
+                const isCurrentlyOn = card.classList.contains("light-on");
+
+                try {
+                  const endpoint = isCurrentlyOn
+                    ? "http://192.168.211.1/lamp/off"
+                    : "http://192.168.211.1/lamp/on";
+                  const response = await fetch(endpoint, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ id: parseInt(lightId) }),
+                  });
+
+                  if (response.ok) {
+                    // Refresh lamp status
+                    fetchLampStatus();
+                  } else {
+                    const errorData = await response.json();
+                    alert(errorData.error || "Failed to toggle light");
+                  }
+                } catch (error) {
+                  console.error("Error toggling light:", error);
+                  alert("Connection error");
+                }
+              });
+            });
+
+          // Color picker listeners
+          document.querySelectorAll(".color-picker").forEach((colorPicker) => {
+            colorPicker.addEventListener("change", async function () {
+              const lightId = this.getAttribute("data-light");
+              const color = hexToRgb(this.value);
+
+              try {
+                const response = await fetch(
+                  "http://192.168.211.1/lamp/color",
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      id: parseInt(lightId),
+                      color: color,
+                    }),
+                  }
+                );
+
+                if (response.ok) {
+                  // Optionally refresh status or update UI
+                  fetchLampStatus();
+                } else {
+                  const errorData = await response.json();
+                  alert(errorData.error || "Failed to change color");
+                }
+              } catch (error) {
+                console.error("Error changing light color:", error);
+                alert("Connection error");
+              }
+            });
+          });
+
+          // All on/off buttons
+          allOnButton.addEventListener("click", async function () {
+            try {
+              const response = await fetch("http://192.168.211.1/lamp/all/on");
+              if (response.ok) {
+                fetchLampStatus();
+              } else {
+                const errorData = await response.json();
+                alert(errorData.error || "Failed to turn all lights on");
+              }
+            } catch (error) {
+              console.error("Error turning all lights on:", error);
+              alert("Connection error");
+            }
+          });
+
+          allOffButton.addEventListener("click", async function () {
+            try {
+              const response = await fetch("http://192.168.211.1/lamp/all/off");
+              if (response.ok) {
+                fetchLampStatus();
+              } else {
+                const errorData = await response.json();
+                alert(errorData.error || "Failed to turn all lights off");
+              }
+            } catch (error) {
+              console.error("Error turning all lights off:", error);
+              alert("Connection error");
+            }
+          });
+        }
+
+        // Initial fetch of lamp status
+        fetchLampStatus();
+
+        // Optional: Periodically refresh lamp status
+        setInterval(fetchLampStatus, 30000); // Refresh every 30 seconds
+
+        // 3D tilt effect for cards (previous implementation remains the same)
+        const cards = document.querySelectorAll(".card-3d");
+        cards.forEach((card) => {
+          card.addEventListener("mousemove", function (e) {
+            const rect = this.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+
+            const rotateX = (y - centerY) / 20;
+            const rotateY = (centerX - x) / 20;
+
+            this.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(10px)`;
+          });
+
+          card.addEventListener("mouseleave", function () {
+            this.style.transform =
+              "perspective(1000px) rotateX(0) rotateY(0) translateZ(0)";
+            setTimeout(() => {
+              this.style.transform = "";
+            }, 500);
+          });
+        });
+      });
+    </script>
+  </body>
+</html>
