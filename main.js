@@ -94,7 +94,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // Fetch lamp status
   async function fetchLampStatus() {
     try {
-      const response = await fetch("http://192.168.211.1/lamp/status", {
+      const response = await fetch("http://192.168.1.19/lamp/status", {
         headers: {
           "Content-Type": "application/json",
         },
@@ -150,8 +150,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
           try {
             const endpoint = isCurrentlyOn
-              ? "http://192.168.211.1/lamp/off"
-              : "http://192.168.211.1/lamp/on";
+              ? "http://192.168.1.19/lamp/off"
+              : "http://192.168.1.19/lamp/on";
             const response = await fetch(endpoint, {
               method: "POST",
               headers: {
@@ -181,7 +181,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const color = hexToRgb(this.value);
 
         try {
-          const response = await fetch("http://192.168.211.1/lamp/color", {
+          const response = await fetch("http://192.168.1.19/lamp/color", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -209,7 +209,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // All on/off buttons
     allOnButton.addEventListener("click", async function () {
       try {
-        const response = await fetch("http://192.168.211.1/lamp/all/on");
+        const response = await fetch("http://192.168.1.19/lamp/all/on");
         if (response.ok) {
           fetchLampStatus();
         } else {
@@ -224,7 +224,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     allOffButton.addEventListener("click", async function () {
       try {
-        const response = await fetch("http://192.168.211.1/lamp/all/off");
+        const response = await fetch("http://192.168.1.19/lamp/all/off");
         if (response.ok) {
           fetchLampStatus();
         } else {
