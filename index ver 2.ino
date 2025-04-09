@@ -8,7 +8,7 @@
 const int SERVER_PORT = 80;
 
 // Konfigurasi lampu RGB
-const int LAMP_COUNT = 2;
+const int LAMP_COUNT = 4;
 struct RGBLamp
 {
     int redPin;
@@ -27,7 +27,9 @@ const int DEFAULT_BLUE = 50;
 
 RGBLamp lampPins[LAMP_COUNT] = {
     {14, 12, 13, "Lamp 1", 0, 0, 0}, // Lampu 1: Red=14, Green=12, Blue=13
-    {25, 26, 27, "Lamp 2", 0, 0, 0}  // Lampu 2: Red=25, Green=26, Blue=27
+    {25, 26, 27, "Lamp 2", 0, 0, 0}, // Lampu 2: Red=25, Green=26, Blue=27
+    {35, 32, 33, "Lamp 3", 0, 0, 0}, // Lampu 3: Red=35, Green=32, Blue=33
+    {21, 19, 18, "Lamp 4", 0, 0, 0}  // Lampu 4: Red=21, Green=19, Blue=18
 };
 
 // Membuat instance server web pada port yang ditentukan
@@ -38,6 +40,15 @@ WiFiManager wifiManager;
 
 // Variabel untuk menyimpan IP Address
 String ipAddress = "";
+
+// Variabel untuk mode running
+bool isRunningMode = false;
+unsigned long lastRunningUpdate = 0;
+int RUNNING_INTERVAL = 500; // Interval perpindahan lampu (ms)
+int currentRunningLamp = 0;
+int runningRed = 255;
+int runningGreen = 0;
+int runningBlue = 0;
 
 // Fungsi untuk menambahkan header CORS
 void sendCORSHeaders()
@@ -109,6 +120,61 @@ void turnOnAllLamps()
         turnOnLampDefault(i);
     }
     Serial.println("Semua lampu dinyalakan");
+}
+
+// Fungsi untuk mengatur mode running
+void setRunningMode(bool enable, int red, int green, int blue)
+{
+    // Matikan semua lampu terlebih dahulu
+    turnOffAllLamps();
+
+    isRunningMode = enable;
+    currentRunningLamp = 0;
+
+    // Simpan warna yang digunakan untuk mode running
+    runningRed = red;
+    runningGreen = green;
+    runningBlue = blue;
+
+    // Jika diaktifkan, nyalakan lampu pertama
+    if (enable)
+    {
+        analogWrite(lampPins[currentRunningLamp].redPin, runningRed);
+        analogWrite(lampPins[currentRunningLamp].greenPin, runningGreen);
+        analogWrite(lampPins[currentRunningLamp].bluePin, runningBlue);
+
+        lampPins[currentRunningLamp].currentRed = runningRed;
+        lampPins[currentRunningLamp].currentGreen = runningGreen;
+        lampPins[currentRunningLamp].currentBlue = runningBlue;
+
+        lastRunningUpdate = millis();
+    }
+
+    Serial.println(enable ? "Mode running diaktifkan" : "Mode running dinonaktifkan");
+}
+
+// Fungsi untuk update mode running di loop utama
+void updateRunningMode()
+{
+    if (isRunningMode && (millis() - lastRunningUpdate > RUNNING_INTERVAL))
+    {
+        // Matikan lampu saat ini
+        turnOffLamp(currentRunningLamp);
+
+        // Pindah ke lampu berikutnya
+        currentRunningLamp = (currentRunningLamp + 1) % LAMP_COUNT;
+
+        // Nyalakan lampu berikutnya
+        analogWrite(lampPins[currentRunningLamp].redPin, runningRed);
+        analogWrite(lampPins[currentRunningLamp].greenPin, runningGreen);
+        analogWrite(lampPins[currentRunningLamp].bluePin, runningBlue);
+
+        lampPins[currentRunningLamp].currentRed = runningRed;
+        lampPins[currentRunningLamp].currentGreen = runningGreen;
+        lampPins[currentRunningLamp].currentBlue = runningBlue;
+
+        lastRunningUpdate = millis();
+    }
 }
 
 // Callback setelah WiFi terhubung
@@ -203,6 +269,12 @@ void handleAPI()
     html += "<p>Request body: <code>{\"id\": 0, \"color\": {\"r\": 255, \"g\": 100, \"b\": 50}}</code></p>";
     html += "</div>";
 
+    html += "<div class='endpoint'>";
+    html += "<h2><span class='method post'>POST</span> /lamp/running</h2>";
+    html += "<p>Mengaktifkan/mematikan mode running (lampu menyala bergantian)</p>";
+    html += "<p>Request body: <code>{\"enable\": true, \"color\": {\"r\": 255, \"g\": 0, \"b\": 0}, \"interval\": 500}</code></p>";
+    html += "</div>";
+
     html += "</body></html>";
     server.send(200, "text/html", html);
 }
@@ -270,6 +342,7 @@ void setup()
     server.on("/lamp/all/off", HTTP_OPTIONS, handleCORS);
     server.on("/lamp/all/on", HTTP_OPTIONS, handleCORS);
     server.on("/lamp/color", HTTP_OPTIONS, handleCORS);
+    server.on("/lamp/running", HTTP_OPTIONS, handleCORS);
 
     // Endpoint untuk mendapatkan status lampu
     server.on("/lamp/status", HTTP_GET, []()
@@ -327,6 +400,11 @@ void setup()
 
         // Validasi ID lampu
         if (lampId >= 0 && lampId < LAMP_COUNT) {
+            // Nonaktifkan mode running jika aktif
+            if (isRunningMode) {
+                setRunningMode(false, 0, 0, 0);
+            }
+            
             // Nyalakan lampu dengan warna default
             turnOnLampDefault(lampId);
 
@@ -367,6 +445,11 @@ void setup()
 
         // Validasi ID lampu
         if (lampId >= 0 && lampId < LAMP_COUNT) {
+            // Nonaktifkan mode running jika aktif
+            if (isRunningMode) {
+                setRunningMode(false, 0, 0, 0);
+            }
+            
             // Matikan lampu
             turnOffLamp(lampId);
 
@@ -384,8 +467,13 @@ void setup()
               {
         sendCORSHeaders();
 
-        // Matikan semua lampu
-        turnOffAllLamps();
+        // Nonaktifkan mode running jika aktif
+        if (isRunningMode) {
+            setRunningMode(false, 0, 0, 0);
+        } else {
+            // Matikan semua lampu
+            turnOffAllLamps();
+        }
         
         // Kirim respons
         server.send(200, "application/json", 
@@ -396,6 +484,11 @@ void setup()
               {
         sendCORSHeaders();
 
+        // Nonaktifkan mode running jika aktif
+        if (isRunningMode) {
+            setRunningMode(false, 0, 0, 0);
+        }
+        
         // Hidupkan semua lampu
         turnOnAllLamps();
         
@@ -435,6 +528,11 @@ void setup()
             green >= 0 && green <= 255 &&
             blue >= 0 && blue <= 255) 
         {
+            // Nonaktifkan mode running jika aktif
+            if (isRunningMode) {
+                setRunningMode(false, 0, 0, 0);
+            }
+            
             // Set warna lampu
             analogWrite(lampPins[lampId].redPin, red);
             analogWrite(lampPins[lampId].greenPin, green);
@@ -461,6 +559,59 @@ void setup()
             server.send(400, "application/json", "{\"error\":\"Parameter tidak valid\"}");
         } });
 
+    // Endpoint untuk mode running
+    server.on("/lamp/running", HTTP_POST, []()
+              {
+        sendCORSHeaders();
+        
+        // Pastikan request adalah POST
+        if (server.method() != HTTP_POST) {
+            server.send(405, "application/json", "{\"error\":\"Method Not Allowed\"}");
+            return;
+        }
+        
+        // Parse JSON body
+        StaticJsonDocument<200> doc;
+        DeserializationError error = deserializeJson(doc, server.arg("plain"));
+        
+        if (error) {
+            server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+        
+        // Ambil parameter dari JSON
+        bool enable = doc["enable"] | false;
+        int red = doc["color"]["r"] | 255;
+        int green = doc["color"]["g"] | 0;
+        int blue = doc["color"]["b"] | 0;
+        int interval = doc["interval"] | 500;
+        
+        // Validasi parameter warna
+        if (red < 0 || red > 255 || green < 0 || green > 255 || blue < 0 || blue > 255) {
+            server.send(400, "application/json", "{\"error\":\"Parameter warna tidak valid\"}");
+            return;
+        }
+        
+        // Validasi interval (minimal 100ms, maksimal 5000ms)
+        if (interval < 100 || interval > 5000) {
+            interval = 500; // Gunakan default jika tidak valid
+        }
+        
+        // Set interval running
+        RUNNING_INTERVAL = interval;
+        
+        // Atur mode running
+        setRunningMode(enable, red, green, blue);
+        
+        // Kirim respons sukses
+        String response = "{\"status\":\"" + String(enable ? "RUNNING_ON" : "RUNNING_OFF") + 
+                         "\", \"color\":{\"r\":" + String(red) + 
+                         ", \"g\":" + String(green) + 
+                         ", \"b\":" + String(blue) + 
+                         "}, \"interval\":" + String(interval) + "}";
+        
+        server.send(200, "application/json", response); });
+
     // Mulai server
     server.begin();
     Serial.println("Server HTTP dimulai");
@@ -484,4 +635,7 @@ void loop()
 {
     // Tangani permintaan klien
     server.handleClient();
+
+    // Update mode running jika diaktifkan
+    updateRunningMode();
 }

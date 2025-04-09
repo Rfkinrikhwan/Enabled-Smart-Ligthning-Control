@@ -7,6 +7,10 @@ document.addEventListener("DOMContentLoaded", function () {
   const systemStatusDetail = document.getElementById("system-status-detail");
   const allOnButton = document.getElementById("all-on");
   const allOffButton = document.getElementById("all-off");
+  const runningLedButton = document.getElementById("running-led");
+
+  // Track running LED state
+  let isRunningLedActive = false;
 
   // Function to create a single light card
   function createLightCard(lamp) {
@@ -62,11 +66,6 @@ document.addEventListener("DOMContentLoaded", function () {
             )}</span>
           </div>
         </div>
-        <button
-          class="light-toggle neumorphic-button bg-blue-500 hover:bg-blue-600 text-slate-800 font-medium py-2 px-4 transition-all text-sm"
-          data-light="${lamp.id}">
-          Toggle
-        </button>
       </div>
     `;
     return card;
@@ -94,12 +93,18 @@ document.addEventListener("DOMContentLoaded", function () {
   // Fetch lamp status
   async function fetchLampStatus() {
     try {
-      const response = await fetch("http://192.168.1.19/lamp/status", {
+      const response = await fetch("http://192.168.173.1/lamp/status", {
         headers: {
           "Content-Type": "application/json",
         },
       });
       const data = await response.json();
+
+      // Update running LED button state if available in response
+      if (data.hasOwnProperty("runningLedActive")) {
+        isRunningLedActive = data.runningLedActive;
+        updateRunningLedButtonAppearance();
+      }
 
       // Clear existing lights
       lightsContainer.innerHTML = "";
@@ -137,6 +142,66 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
+  // Update the Running LED button appearance based on its state
+  function updateRunningLedButtonAppearance() {
+    if (isRunningLedActive) {
+      runningLedButton.classList.remove(
+        "bg-emerald-500",
+        "hover:bg-emerald-600"
+      );
+      runningLedButton.classList.add("bg-orange-500", "hover:bg-orange-600");
+      runningLedButton.innerHTML =
+        '<i class="fa-solid fa-stop mr-2"></i> Stop Running';
+    } else {
+      runningLedButton.classList.remove("bg-orange-500", "hover:bg-orange-600");
+      runningLedButton.classList.add("bg-emerald-500", "hover:bg-emerald-600");
+      runningLedButton.innerHTML =
+        '<i class="fa-solid fa-play mr-2"></i> Running Led';
+    }
+  }
+
+  // Toggle running LED mode
+  async function toggleRunningLed() {
+    try {
+      // Get the current color from the first active light or use default red
+      let color = {
+        r: Math.floor(Math.random() * 256),
+        g: Math.floor(Math.random() * 256),
+        b: Math.floor(Math.random() * 256),
+      }; // Random color
+      const activeColorPicker = document.querySelector(
+        ".light-on .color-picker"
+      );
+      if (activeColorPicker) {
+        color = hexToRgb(activeColorPicker.value);
+      }
+
+      const response = await fetch("http://192.168.173.1/lamp/running", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enable: !isRunningLedActive,
+          color: color,
+          interval: 200, // Default interval of 500ms
+        }),
+      });
+
+      if (response.ok) {
+        isRunningLedActive = !isRunningLedActive;
+        updateRunningLedButtonAppearance();
+        fetchLampStatus(); // Refresh the status
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || "Failed to toggle running LED mode");
+      }
+    } catch (error) {
+      console.error("Error toggling running LED mode:", error);
+      alert("Connection error");
+    }
+  }
+
   // Attach event listeners to light controls
   function attachLightControlListeners() {
     // Light toggle buttons
@@ -150,8 +215,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
           try {
             const endpoint = isCurrentlyOn
-              ? "http://192.168.1.19/lamp/off"
-              : "http://192.168.1.19/lamp/on";
+              ? "http://192.168.173.1/lamp/off"
+              : "http://192.168.173.1/lamp/on";
             const response = await fetch(endpoint, {
               method: "POST",
               headers: {
@@ -181,7 +246,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const color = hexToRgb(this.value);
 
         try {
-          const response = await fetch("http://192.168.1.19/lamp/color", {
+          const response = await fetch("http://192.168.173.1/lamp/color", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -209,7 +274,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // All on/off buttons
     allOnButton.addEventListener("click", async function () {
       try {
-        const response = await fetch("http://192.168.1.19/lamp/all/on");
+        const response = await fetch("http://192.168.173.1/lamp/all/on");
         if (response.ok) {
           fetchLampStatus();
         } else {
@@ -224,7 +289,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     allOffButton.addEventListener("click", async function () {
       try {
-        const response = await fetch("http://192.168.1.19/lamp/all/off");
+        const response = await fetch("http://192.168.173.1/lamp/all/off");
         if (response.ok) {
           fetchLampStatus();
         } else {
@@ -236,6 +301,9 @@ document.addEventListener("DOMContentLoaded", function () {
         alert("Connection error");
       }
     });
+
+    // Running LED button
+    runningLedButton.addEventListener("click", toggleRunningLed);
   }
 
   // Initial fetch of lamp status
