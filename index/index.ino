@@ -31,7 +31,7 @@ const int DEFAULT_BLUE = 50;
 RGBLamp lampPins[LAMP_COUNT] = {
     {14, 12, 13, "Lamp 1", 0, 0, 0}, // Lampu 1: Red=14, Green=12, Blue=13
     {25, 26, 27, "Lamp 2", 0, 0, 0}, // Lampu 2: Red=25, Green=26, Blue=27
-    {34, 35, 32, "Lamp 3", 0, 0, 0}, // Lampu 3: Red=34, Green=35, Blue=32
+    {35, 32, 33, "Lamp 3", 0, 0, 0}, // Lampu 3: Red=35, Green=32, Blue=33
     {21, 19, 18, "Lamp 4", 0, 0, 0}  // Lampu 4: Red=21, Green=19, Blue=18
 };
 
