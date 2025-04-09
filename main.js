@@ -9,6 +9,28 @@ document.addEventListener("DOMContentLoaded", function () {
   const allOffButton = document.getElementById("all-off");
   const runningLedButton = document.getElementById("running-led");
 
+  // New elements for IP address
+  const ipAddressInput = document.getElementById("ip-address-input");
+  const saveIpButton = document.getElementById("save-ip-button");
+
+  // Get IP address from localStorage or use default
+  let currentIpAddress =
+    localStorage.getItem("lightingIpAddress") || "192.168.117.1";
+  ipAddressInput.value = currentIpAddress;
+
+  // Save IP address to localStorage
+  saveIpButton.addEventListener("click", function () {
+    const newIpAddress = ipAddressInput.value.trim();
+    if (newIpAddress) {
+      localStorage.setItem("lightingIpAddress", newIpAddress);
+      currentIpAddress = newIpAddress;
+      fetchLampStatus(); // Refresh with new IP
+      alert("IP address saved successfully!");
+    } else {
+      alert("Please enter a valid IP address");
+    }
+  });
+
   // Track running LED state
   let isRunningLedActive = false;
 
@@ -93,7 +115,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // Fetch lamp status
   async function fetchLampStatus() {
     try {
-      const response = await fetch("http://192.168.173.1/lamp/status", {
+      const response = await fetch(`http://${currentIpAddress}/lamp/status`, {
         headers: {
           "Content-Type": "application/json",
         },
@@ -176,7 +198,7 @@ document.addEventListener("DOMContentLoaded", function () {
         color = hexToRgb(activeColorPicker.value);
       }
 
-      const response = await fetch("http://192.168.173.1/lamp/running", {
+      const response = await fetch(`http://${currentIpAddress}/lamp/running`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -184,7 +206,7 @@ document.addEventListener("DOMContentLoaded", function () {
         body: JSON.stringify({
           enable: !isRunningLedActive,
           color: color,
-          interval: 200, // Default interval of 500ms
+          interval: 200, // Default interval of 200ms
         }),
       });
 
@@ -215,8 +237,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
           try {
             const endpoint = isCurrentlyOn
-              ? "http://192.168.173.1/lamp/off"
-              : "http://192.168.173.1/lamp/on";
+              ? `http://${currentIpAddress}/lamp/off`
+              : `http://${currentIpAddress}/lamp/on`;
             const response = await fetch(endpoint, {
               method: "POST",
               headers: {
@@ -246,16 +268,19 @@ document.addEventListener("DOMContentLoaded", function () {
         const color = hexToRgb(this.value);
 
         try {
-          const response = await fetch("http://192.168.173.1/lamp/color", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              id: parseInt(lightId),
-              color: color,
-            }),
-          });
+          const response = await fetch(
+            `http://${currentIpAddress}/lamp/color`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                id: parseInt(lightId),
+                color: color,
+              }),
+            }
+          );
 
           if (response.ok) {
             // Optionally refresh status or update UI
@@ -274,7 +299,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // All on/off buttons
     allOnButton.addEventListener("click", async function () {
       try {
-        const response = await fetch("http://192.168.173.1/lamp/all/on");
+        const response = await fetch(`http://${currentIpAddress}/lamp/all/on`);
         if (response.ok) {
           fetchLampStatus();
         } else {
@@ -289,7 +314,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     allOffButton.addEventListener("click", async function () {
       try {
-        const response = await fetch("http://192.168.173.1/lamp/all/off");
+        const response = await fetch(`http://${currentIpAddress}/lamp/all/off`);
         if (response.ok) {
           fetchLampStatus();
         } else {

@@ -7,6 +7,9 @@
 // Port server (umumnya 80 untuk HTTP atau 8080 untuk alternatif)
 const int SERVER_PORT = 80;
 
+// Konfigurasi buzzer
+const int BUZZER_PIN = 23; // Gunakan pin yang tersedia pada ESP32 Anda
+
 // Konfigurasi lampu RGB
 const int LAMP_COUNT = 4;
 struct RGBLamp
@@ -28,7 +31,7 @@ const int DEFAULT_BLUE = 50;
 RGBLamp lampPins[LAMP_COUNT] = {
     {14, 12, 13, "Lamp 1", 0, 0, 0}, // Lampu 1: Red=14, Green=12, Blue=13
     {25, 26, 27, "Lamp 2", 0, 0, 0}, // Lampu 2: Red=25, Green=26, Blue=27
-    {35, 32, 33, "Lamp 3", 0, 0, 0}, // Lampu 3: Red=35, Green=32, Blue=33
+    {34, 35, 32, "Lamp 3", 0, 0, 0}, // Lampu 3: Red=34, Green=35, Blue=32
     {21, 19, 18, "Lamp 4", 0, 0, 0}  // Lampu 4: Red=21, Green=19, Blue=18
 };
 
@@ -49,6 +52,42 @@ int currentRunningLamp = 0;
 int runningRed = 255;
 int runningGreen = 0;
 int runningBlue = 0;
+
+// Fungsi untuk membunyikan buzzer sesuai dengan pola
+void playBuzzerTone(int frequency, int duration)
+{
+    tone(BUZZER_PIN, frequency, duration);
+}
+
+// Fungsi untuk membunyikan notifikasi WiFi terhubung dengan sukses
+void playSuccessSound()
+{
+    // Memainkan nada sukses (ascending)
+    playBuzzerTone(1000, 100);
+    delay(100);
+    playBuzzerTone(2000, 100);
+    delay(100);
+    playBuzzerTone(3000, 100);
+    delay(100);
+    playBuzzerTone(4000, 300);
+    delay(300);
+    noTone(BUZZER_PIN);
+}
+
+// Fungsi untuk membunyikan notifikasi WiFi gagal terhubung
+void playFailSound()
+{
+    // Memainkan nada gagal (descending)
+    playBuzzerTone(4000, 100);
+    delay(100);
+    playBuzzerTone(3000, 100);
+    delay(100);
+    playBuzzerTone(2000, 100);
+    delay(100);
+    playBuzzerTone(1000, 300);
+    delay(300);
+    noTone(BUZZER_PIN);
+}
 
 // Fungsi untuk menambahkan header CORS
 void sendCORSHeaders()
@@ -183,6 +222,14 @@ void configModeCallback(WiFiManager *myWiFiManager)
     Serial.println("Mode Konfigurasi Aktif");
     Serial.println(WiFi.softAPIP());
     Serial.println(myWiFiManager->getConfigPortalSSID());
+
+    // Buzzer memberikan notifikasi masuk mode konfigurasi (tiga beep pendek)
+    for (int i = 0; i < 3; i++)
+    {
+        playBuzzerTone(2000, 100);
+        delay(200);
+    }
+    noTone(BUZZER_PIN);
 }
 
 // Endpoint untuk halaman utama
@@ -211,8 +258,22 @@ void handleRoot()
     html += "<p>To reset WiFi settings and configure a new network:</p>";
     html += "<a href='/resetwifi' class='btn btn-reset'>Reset WiFi Settings</a>";
     html += "<a href='/api' class='btn'>API Endpoints</a>";
+    html += "<a href='/test-buzzer' class='btn'>Test Buzzer</a>";
     html += "</body></html>";
     server.send(200, "text/html", html);
+}
+
+// Handler untuk test buzzer
+void handleTestBuzzer()
+{
+    playSuccessSound();
+    delay(500);
+    playFailSound();
+
+    server.send(200, "text/html", "<html><head><meta http-equiv='refresh' content='2;url=/'></head><body>"
+                                  "<h3>Testing buzzer completed</h3>"
+                                  "<p>Redirecting back to home page...</p>"
+                                  "</body></html>");
 }
 
 // Endpoint untuk melihat daftar API
@@ -287,7 +348,11 @@ void handleResetWiFi()
                                   "<p>The device will create an access point named 'ESP32-RGB-Setup'.</p>"
                                   "<p>Connect to it and navigate to 192.168.4.1 to configure WiFi.</p>"
                                   "</body></html>");
-    delay(3000);
+
+    // Mainkan suara peringatan untuk reset WiFi
+    playBuzzerTone(2000, 1000);
+    delay(1000);
+
     // Reset pengaturan WiFi
     wifiManager.resetSettings();
     delay(1000);
@@ -298,6 +363,13 @@ void setup()
 {
     Serial.begin(115200);
     Serial.println("\nMemulai ESP32 RGB Lamp Controller");
+
+    // Inisialisasi pin buzzer
+    pinMode(BUZZER_PIN, OUTPUT);
+
+    // Mainkan tone startup
+    playBuzzerTone(1500, 200);
+    delay(200);
 
     // Inisialisasi pin lampu
     for (int i = 0; i < LAMP_COUNT; i++)
@@ -320,7 +392,17 @@ void setup()
     if (!connected)
     {
         Serial.println("Gagal terhubung ke WiFi, restart ESP32...");
+
+        // Mainkan nada kegagalan terhubung ke WiFi
+        playFailSound();
+
+        delay(2000);
         ESP.restart();
+    }
+    else
+    {
+        // Mainkan nada sukses terhubung ke WiFi
+        playSuccessSound();
     }
 
     // Simpan IP Address
@@ -333,6 +415,7 @@ void setup()
     // Tambahkan handler untuk halaman web
     server.on("/", HTTP_GET, handleRoot);
     server.on("/api", HTTP_GET, handleAPI);
+    server.on("/test-buzzer", HTTP_GET, handleTestBuzzer);
     server.on("/resetwifi", HTTP_GET, handleResetWiFi);
 
     // Tambahkan handler untuk preflight request
@@ -629,6 +712,11 @@ void setup()
         delay(200);
         analogWrite(lampPins[i].bluePin, 0);
     }
+
+    // Buzz singkat untuk menandakan sistem siap
+    playBuzzerTone(2000, 200);
+    delay(200);
+    playBuzzerTone(3000, 200);
 }
 
 void loop()
@@ -638,4 +726,26 @@ void loop()
 
     // Update mode running jika diaktifkan
     updateRunningMode();
+
+    // Monitor koneksi WiFi dan berikan notifikasi jika terputus
+    static bool previouslyConnected = true;
+
+    if (WiFi.status() != WL_CONNECTED && previouslyConnected)
+    {
+        // WiFi terputus, mainkan nada error
+        Serial.println("WiFi terputus, mencoba menghubungkan kembali");
+        playFailSound();
+        previouslyConnected = false;
+    }
+    else if (WiFi.status() == WL_CONNECTED && !previouslyConnected)
+    {
+        // WiFi terhubung kembali, mainkan nada sukses
+        Serial.println("WiFi terhubung kembali");
+        ipAddress = WiFi.localIP().toString();
+        playSuccessSound();
+        previouslyConnected = true;
+    }
+
+    // Delay kecil untuk stabilitas
+    delay(10);
 }
