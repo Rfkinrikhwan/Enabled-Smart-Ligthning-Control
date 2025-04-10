@@ -31,7 +31,7 @@ const int DEFAULT_BLUE = 50;
 RGBLamp lampPins[LAMP_COUNT] = {
     {14, 12, 13, "Lamp 1", 0, 0, 0}, // Lampu 1: Red=14, Green=12, Blue=13
     {25, 26, 27, "Lamp 2", 0, 0, 0}, // Lampu 2: Red=25, Green=26, Blue=27
-    {34, 35, 32, "Lamp 3", 0, 0, 0}, // Lampu 3: Red=34, Green=35, Blue=32
+    {35, 32, 33, "Lamp 3", 0, 0, 0}, // Lampu 3: Red=35, Green=32, Blue=33
     {21, 19, 18, "Lamp 4", 0, 0, 0}  // Lampu 4: Red=21, Green=19, Blue=18
 };
 
@@ -53,10 +53,37 @@ int runningRed = 255;
 int runningGreen = 0;
 int runningBlue = 0;
 
+// Variabel untuk nada twinkle pada mode running
+const int TWINKLE_NOTES[] = {262, 330, 392, 523, 659, 784};   // Frekuensi nada C, E, G, C, E, G oktaf lebih tinggi
+const int TWINKLE_DURATIONS[] = {100, 80, 100, 80, 100, 120}; // Durasi masing-masing nada (ms)
+const int TWINKLE_COUNT = 6;                                  // Jumlah nada twinkle
+int currentTwinkleNote = 0;
+unsigned long lastTwinkleTime = 0;
+bool playTwinkleOnRunning = true; // Flag untuk memainkan nada twinkle saat mode running
+
 // Fungsi untuk membunyikan buzzer sesuai dengan pola
 void playBuzzerTone(int frequency, int duration)
 {
     tone(BUZZER_PIN, frequency, duration);
+}
+
+// Fungsi untuk memainkan nada twinkle
+void playTwinkleNote()
+{
+    if (isRunningMode && playTwinkleOnRunning)
+    {
+        if (millis() - lastTwinkleTime >= TWINKLE_DURATIONS[currentTwinkleNote])
+        {
+            // Mainkan nada berikutnya
+            playBuzzerTone(TWINKLE_NOTES[currentTwinkleNote], TWINKLE_DURATIONS[currentTwinkleNote]);
+
+            // Pindah ke nada berikutnya dalam urutan
+            currentTwinkleNote = (currentTwinkleNote + 1) % TWINKLE_COUNT;
+
+            // Perbarui waktu
+            lastTwinkleTime = millis();
+        }
+    }
 }
 
 // Fungsi untuk membunyikan notifikasi WiFi terhubung dengan sukses
@@ -175,6 +202,10 @@ void setRunningMode(bool enable, int red, int green, int blue)
     runningGreen = green;
     runningBlue = blue;
 
+    // Reset variabel untuk nada twinkle
+    currentTwinkleNote = 0;
+    lastTwinkleTime = millis();
+
     // Jika diaktifkan, nyalakan lampu pertama
     if (enable)
     {
@@ -187,6 +218,9 @@ void setRunningMode(bool enable, int red, int green, int blue)
         lampPins[currentRunningLamp].currentBlue = runningBlue;
 
         lastRunningUpdate = millis();
+
+        // Mulai dengan nada pertama dari twinkle
+        playBuzzerTone(TWINKLE_NOTES[0], TWINKLE_DURATIONS[0]);
     }
 
     Serial.println(enable ? "Mode running diaktifkan" : "Mode running dinonaktifkan");
@@ -213,6 +247,12 @@ void updateRunningMode()
         lampPins[currentRunningLamp].currentBlue = runningBlue;
 
         lastRunningUpdate = millis();
+    }
+
+    // Update nada twinkle jika mode running aktif
+    if (isRunningMode && playTwinkleOnRunning)
+    {
+        playTwinkleNote();
     }
 }
 
@@ -259,6 +299,7 @@ void handleRoot()
     html += "<a href='/resetwifi' class='btn btn-reset'>Reset WiFi Settings</a>";
     html += "<a href='/api' class='btn'>API Endpoints</a>";
     html += "<a href='/test-buzzer' class='btn'>Test Buzzer</a>";
+    html += "<a href='/test-twinkle' class='btn'>Test Twinkle Sound</a>";
     html += "</body></html>";
     server.send(200, "text/html", html);
 }
@@ -272,6 +313,24 @@ void handleTestBuzzer()
 
     server.send(200, "text/html", "<html><head><meta http-equiv='refresh' content='2;url=/'></head><body>"
                                   "<h3>Testing buzzer completed</h3>"
+                                  "<p>Redirecting back to home page...</p>"
+                                  "</body></html>");
+}
+
+// Handler untuk test suara twinkle
+void handleTestTwinkle()
+{
+    // Memainkan seluruh nada twinkle secara berurutan
+    for (int i = 0; i < TWINKLE_COUNT; i++)
+    {
+        playBuzzerTone(TWINKLE_NOTES[i], TWINKLE_DURATIONS[i]);
+        delay(TWINKLE_DURATIONS[i] + 50); // Tambahkan sedikit jeda antar nada
+    }
+
+    noTone(BUZZER_PIN);
+
+    server.send(200, "text/html", "<html><head><meta http-equiv='refresh' content='2;url=/'></head><body>"
+                                  "<h3>Testing twinkle sound completed</h3>"
                                   "<p>Redirecting back to home page...</p>"
                                   "</body></html>");
 }
@@ -333,7 +392,7 @@ void handleAPI()
     html += "<div class='endpoint'>";
     html += "<h2><span class='method post'>POST</span> /lamp/running</h2>";
     html += "<p>Mengaktifkan/mematikan mode running (lampu menyala bergantian)</p>";
-    html += "<p>Request body: <code>{\"enable\": true, \"color\": {\"r\": 255, \"g\": 0, \"b\": 0}, \"interval\": 500}</code></p>";
+    html += "<p>Request body: <code>{\"enable\": true, \"color\": {\"r\": 255, \"g\": 0, \"b\": 0}, \"interval\": 500, \"twinkle\": true}</code></p>";
     html += "</div>";
 
     html += "</body></html>";
@@ -416,6 +475,7 @@ void setup()
     server.on("/", HTTP_GET, handleRoot);
     server.on("/api", HTTP_GET, handleAPI);
     server.on("/test-buzzer", HTTP_GET, handleTestBuzzer);
+    server.on("/test-twinkle", HTTP_GET, handleTestTwinkle);
     server.on("/resetwifi", HTTP_GET, handleResetWiFi);
 
     // Tambahkan handler untuk preflight request
@@ -452,6 +512,17 @@ void setup()
             currentColor["r"] = lampPins[i].currentRed;
             currentColor["g"] = lampPins[i].currentGreen;
             currentColor["b"] = lampPins[i].currentBlue;
+        }
+
+        // Tambahkan status mode running
+        jsonDoc["runningMode"] = isRunningMode;
+        if (isRunningMode) {
+            JsonObject runningColor = jsonDoc.createNestedObject("runningColor");
+            runningColor["r"] = runningRed;
+            runningColor["g"] = runningGreen;
+            runningColor["b"] = runningBlue;
+            jsonDoc["runningInterval"] = RUNNING_INTERVAL;
+            jsonDoc["twinkleEnabled"] = playTwinkleOnRunning;
         }
 
         String response;
@@ -635,65 +706,69 @@ void setup()
             server.send(200, "application/json", response);
             
             Serial.println(lampPins[lampId].name + " diubah menjadi warna R:" + 
-                           String(red) + " G:" + String(green) + " B:" + String(blue));
-        } 
-        else 
-        {
-            server.send(400, "application/json", "{\"error\":\"Parameter tidak valid\"}");
-        } });
+                String(red) + " G:" + String(green) + " B:" + String(blue));
+} 
+else 
+{
+ server.send(400, "application/json", "{\"error\":\"Parameter tidak valid\"}");
+} });
 
     // Endpoint untuk mode running
     server.on("/lamp/running", HTTP_POST, []()
               {
-        sendCORSHeaders();
-        
-        // Pastikan request adalah POST
-        if (server.method() != HTTP_POST) {
-            server.send(405, "application/json", "{\"error\":\"Method Not Allowed\"}");
-            return;
-        }
-        
-        // Parse JSON body
-        StaticJsonDocument<200> doc;
-        DeserializationError error = deserializeJson(doc, server.arg("plain"));
-        
-        if (error) {
-            server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
-            return;
-        }
-        
-        // Ambil parameter dari JSON
-        bool enable = doc["enable"] | false;
-        int red = doc["color"]["r"] | 255;
-        int green = doc["color"]["g"] | 0;
-        int blue = doc["color"]["b"] | 0;
-        int interval = doc["interval"] | 500;
-        
-        // Validasi parameter warna
-        if (red < 0 || red > 255 || green < 0 || green > 255 || blue < 0 || blue > 255) {
-            server.send(400, "application/json", "{\"error\":\"Parameter warna tidak valid\"}");
-            return;
-        }
-        
-        // Validasi interval (minimal 100ms, maksimal 5000ms)
-        if (interval < 100 || interval > 5000) {
-            interval = 500; // Gunakan default jika tidak valid
-        }
-        
-        // Set interval running
-        RUNNING_INTERVAL = interval;
-        
-        // Atur mode running
-        setRunningMode(enable, red, green, blue);
-        
-        // Kirim respons sukses
-        String response = "{\"status\":\"" + String(enable ? "RUNNING_ON" : "RUNNING_OFF") + 
-                         "\", \"color\":{\"r\":" + String(red) + 
-                         ", \"g\":" + String(green) + 
-                         ", \"b\":" + String(blue) + 
-                         "}, \"interval\":" + String(interval) + "}";
-        
-        server.send(200, "application/json", response); });
+sendCORSHeaders();
+
+// Pastikan request adalah POST
+if (server.method() != HTTP_POST) {
+ server.send(405, "application/json", "{\"error\":\"Method Not Allowed\"}");
+ return;
+}
+
+// Parse JSON body
+StaticJsonDocument<200> doc;
+DeserializationError error = deserializeJson(doc, server.arg("plain"));
+
+if (error) {
+ server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+ return;
+}
+
+// Ambil parameter dari JSON
+bool enable = doc["enable"] | false;
+int red = doc["color"]["r"] | 255;
+int green = doc["color"]["g"] | 0;
+int blue = doc["color"]["b"] | 0;
+int interval = doc["interval"] | 500;
+
+// Parameter untuk twinkle sound
+playTwinkleOnRunning = doc["twinkle"] | true;
+
+// Validasi parameter warna
+if (red < 0 || red > 255 || green < 0 || green > 255 || blue < 0 || blue > 255) {
+ server.send(400, "application/json", "{\"error\":\"Parameter warna tidak valid\"}");
+ return;
+}
+
+// Validasi interval (minimal 100ms, maksimal 5000ms)
+if (interval < 100 || interval > 5000) {
+ interval = 500; // Gunakan default jika tidak valid
+}
+
+// Set interval running
+RUNNING_INTERVAL = interval;
+
+// Atur mode running
+setRunningMode(enable, red, green, blue);
+
+// Kirim respons sukses
+String response = "{\"status\":\"" + String(enable ? "RUNNING_ON" : "RUNNING_OFF") + 
+              "\", \"color\":{\"r\":" + String(red) + 
+              ", \"g\":" + String(green) + 
+              ", \"b\":" + String(blue) + 
+              "}, \"interval\":" + String(interval) + 
+              ", \"twinkle\":" + String(playTwinkleOnRunning ? "true" : "false") + "}";
+
+server.send(200, "application/json", response); });
 
     // Mulai server
     server.begin();
