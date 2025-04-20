@@ -18,6 +18,12 @@ const int buzzerPin = 18;
 bool offlineMode = false;
 unsigned long lastHeartbeat = 0;
 
+// === Tepukan ===
+unsigned long lastClapTime = 0;
+int clapCount = 0;
+bool previousClap = LOW;
+const unsigned long clapTimeout = 1000;
+
 // === Setup Awal ===
 void setup()
 {
@@ -39,10 +45,8 @@ void setup()
         Serial.println("Tersambung ke WiFi!");
         playSuccessTone();
 
-        // Setup NTP
         configTime(0, 0, "pool.ntp.org", "time.nist.gov");
 
-        // Setup Firebase
         config.api_key = API_KEY;
         config.database_url = DATABASE_URL;
         Firebase.begin(&config, &auth);
@@ -57,8 +61,6 @@ void setup()
         else
         {
             Firebase.RTDB.setStreamCallback(&fbdo, streamCallback, streamTimeoutCallback);
-
-            // Update status device
             updateDeviceStatus(true);
         }
     }
@@ -74,7 +76,7 @@ void loop()
     else
     {
         if (millis() - lastHeartbeat > 30000)
-        { // setiap 30 detik
+        {
             updateDeviceStatus(true);
             lastHeartbeat = millis();
         }
@@ -84,7 +86,7 @@ void loop()
 // === Firebase Listener ===
 void streamCallback(FirebaseStream data)
 {
-    String path = data.dataPath(); // misal: /1
+    String path = data.dataPath();
     int lampuIndex = path.substring(1).toInt() - 1;
 
     if (lampuIndex >= 0 && lampuIndex < 4)
@@ -106,25 +108,27 @@ void streamTimeoutCallback(bool timeout)
 }
 
 // === Mode Fallback Sensor Tepuk ===
-bool previousClap = LOW;
-unsigned long lastToggleTime = 0;
-bool fallbackState = false;
-
 void handleClapFallback()
 {
     bool currentClap = digitalRead(clapPin);
+    unsigned long currentTime = millis();
 
-    if (currentClap == HIGH && previousClap == LOW && millis() - lastToggleTime > 500)
+    if (currentClap == HIGH && previousClap == LOW && (currentTime - lastClapTime > 50))
     {
-        fallbackState = !fallbackState;
-        lastToggleTime = millis();
+        clapCount++;
+        lastClapTime = currentTime;
+    }
 
-        for (int i = 0; i < 4; i++)
+    if (clapCount > 0 && (currentTime - lastClapTime > clapTimeout))
+    {
+        if (clapCount >= 1 && clapCount <= 4)
         {
-            digitalWrite(relayPins[i], fallbackState ? HIGH : LOW);
+            int index = clapCount - 1;
+            bool currentState = digitalRead(relayPins[index]);
+            digitalWrite(relayPins[index], !currentState);
+            Serial.printf("Lampu %d %s (tepuk %d)\n", index + 1, !currentState ? "HIDUP" : "MATI", clapCount);
         }
-
-        Serial.println(fallbackState ? "Lampu ON (tepuk)" : "Lampu OFF (tepuk)");
+        clapCount = 0;
     }
 
     previousClap = currentClap;
