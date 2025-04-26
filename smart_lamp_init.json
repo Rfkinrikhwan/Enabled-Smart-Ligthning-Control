@@ -1,14 +1,15 @@
 {
+    "device_status": {
+        "esp32_1": {
+            "last_seen": "unknown",
+            "online": true
+        }
+    },
     "lampu": {
         "1": false,
         "2": false,
         "3": false,
         "4": false
     },
-    "device_status": {
-        "esp32_1": {
-            "online": false,
-            "last_seen": "unknown"
-        }
-    }
+    "jadwal": {}
 }
