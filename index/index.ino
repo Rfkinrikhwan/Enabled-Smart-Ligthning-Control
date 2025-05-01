@@ -20,6 +20,7 @@
 #define RELAY_4 26
 #define SOUND_SENSOR_PIN 35 // Pin untuk sensor tepok
 #define BUZZER_PIN 25       // Pin untuk buzzer
+#define WIFI_LED 2          // Onboard blue LED on GPIO2 (D2)
 
 // Time configuration
 const char *ntpServer = "pool.ntp.org";
@@ -86,6 +87,7 @@ bool parseTimeString(String timeStr, ScheduleTime &time);
 bool checkWiFiConnection();
 void setupWiFi();
 void printAllSchedules();
+void updateWiFiLED(bool connected);
 
 void setup()
 {
@@ -101,12 +103,14 @@ void setup()
   pinMode(RELAY_4, OUTPUT);
   pinMode(SOUND_SENSOR_PIN, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(WIFI_LED, OUTPUT); // Initialize WiFi LED pin
 
   // Set initial state of relays (HIGH = OFF for active low relays)
   digitalWrite(RELAY_1, HIGH);
   digitalWrite(RELAY_2, HIGH);
   digitalWrite(RELAY_3, HIGH);
   digitalWrite(RELAY_4, HIGH);
+  digitalWrite(WIFI_LED, LOW); // Turn OFF WiFi LED initially
 
   // Initialize schedules
   for (int i = 0; i < 4; i++)
@@ -120,6 +124,9 @@ void setup()
   // Configure time if WiFi is connected
   if (WiFi.status() == WL_CONNECTED)
   {
+    // Turn on WiFi LED as we're connected
+    updateWiFiLED(true);
+
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
     struct tm timeinfo;
     if (getLocalTime(&timeinfo))
@@ -141,6 +148,7 @@ void setup()
   {
     isOffline = true;
     Serial.println("Starting in offline mode");
+    updateWiFiLED(false); // Turn off WiFi LED as we're offline
     playErrorTone();
   }
 }
@@ -152,6 +160,9 @@ void loop()
 
   // Check and maintain WiFi connection
   bool wifiConnected = checkWiFiConnection();
+
+  // Update WiFi LED based on connection status
+  updateWiFiLED(wifiConnected);
 
   // Handle online functionality if WiFi is connected
   if (wifiConnected && !isOffline)
@@ -184,6 +195,12 @@ void loop()
   delay(10);
 }
 
+// Helper function to update WiFi LED status
+void updateWiFiLED(bool connected)
+{
+  digitalWrite(WIFI_LED, connected ? HIGH : LOW);
+}
+
 void setupWiFi()
 {
   // Use WiFiManager to handle connection
@@ -203,6 +220,7 @@ void setupWiFi()
   {
     Serial.println("WiFi Connected Successfully!");
     Serial.println("IP: " + WiFi.localIP().toString());
+    updateWiFiLED(true); // Turn ON WiFi LED
     wifiSuccessConnected();
 
     // Set maximum transmit power for better range
@@ -215,6 +233,7 @@ void setupWiFi()
   {
     Serial.println("Failed to connect to WiFi. Starting in offline mode.");
     isOffline = true;
+    updateWiFiLED(false); // Turn OFF WiFi LED
     wifiFailConnected();
   }
 }
@@ -237,6 +256,7 @@ bool checkWiFiConnection()
       {
         Serial.println("WiFi reconnected!");
         isOffline = false;
+        updateWiFiLED(true); // Turn ON WiFi LED
         wifiSuccessConnected();
 
         // Reconnect to Firebase if we were offline
@@ -256,6 +276,7 @@ bool checkWiFiConnection()
         if (!isOffline)
         {
           wifiFailConnected();
+          updateWiFiLED(false); // Turn OFF WiFi LED
           isOffline = true;
         }
 
@@ -791,11 +812,17 @@ void printAllSchedules()
   Serial.println("============================\n");
 }
 
+void playTone(int duration)
+{
+  tone(BUZZER_PIN, 1000, duration);
+  delay(duration + 50);
+}
+
 void playTone(int frequency, int duration)
 {
-  tone(buzzer, frequency, duration);
+  tone(BUZZER_PIN, frequency, duration);
   delay(duration * 1.3); // jeda sedikit setelah tiap nada
-  noTone(buzzer);
+  noTone(BUZZER_PIN);
 }
 
 void playSuccessTone()
