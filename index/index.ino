@@ -47,7 +47,7 @@ unsigned long lastReconnectAttempt = 0;
 const unsigned long reconnectInterval = 30000; // Try to reconnect every 30 seconds
 int consecutiveFailedConnections = 0;
 const int maxFailedConnections = 5;       // After 5 failed attempts, restart ESP32
-unsigned long wifiConnectTimeout = 15000; // 15 second timeout for WiFi connections
+unsigned long wifiConnectTimeout = 60000; // 15 second timeout for WiFi connections
 
 // Structure for time
 struct ScheduleTime
@@ -71,6 +71,11 @@ void handleSchedules();
 void playTone(int duration);
 void playSuccessTone();
 void playErrorTone();
+void playBuzzerTone(int frequency, int duration);
+void wifiSuccessConnected();
+void wifiFailConnected();
+void firebaseSuccessConnected();
+void firebaseFailConnected();
 void handleSoundSensor();
 void updateRelays();
 void connectToFirebase();
@@ -80,6 +85,7 @@ void updateDeviceStatus();
 bool parseTimeString(String timeStr, ScheduleTime &time);
 bool checkWiFiConnection();
 void setupWiFi();
+void printAllSchedules();
 
 void setup()
 {
@@ -97,10 +103,10 @@ void setup()
   pinMode(BUZZER_PIN, OUTPUT);
 
   // Set initial state of relays (HIGH = OFF for active low relays)
-  digitalWrite(RELAY_1, LOW);
-  digitalWrite(RELAY_2, LOW);
-  digitalWrite(RELAY_3, LOW);
-  digitalWrite(RELAY_4, LOW);
+  digitalWrite(RELAY_1, HIGH);
+  digitalWrite(RELAY_2, HIGH);
+  digitalWrite(RELAY_3, HIGH);
+  digitalWrite(RELAY_4, HIGH);
 
   // Initialize schedules
   for (int i = 0; i < 4; i++)
@@ -120,9 +126,16 @@ void setup()
     {
       Serial.println("Current time: " + String(timeinfo.tm_hour) + ":" + String(timeinfo.tm_min));
     }
+    else
+    {
+      Serial.println("Failed to obtain time! Check NTP server connection.");
+    }
 
     // Connect to Firebase
     connectToFirebase();
+
+    // Print all schedules after loading for debugging
+    printAllSchedules();
   }
   else
   {
@@ -143,9 +156,9 @@ void loop()
   // Handle online functionality if WiFi is connected
   if (wifiConnected && !isOffline)
   {
-    // Check schedules every minute
+    // Check schedules more frequently (every 10 seconds)
     static unsigned long lastScheduleCheck = 0;
-    if (millis() - lastScheduleCheck > 60000)
+    if (millis() - lastScheduleCheck > 10000)
     {
       handleSchedules();
       lastScheduleCheck = millis();
@@ -159,6 +172,7 @@ void loop()
     if (millis() - lastStatusUpdate > 30000)
     { // Every 30 seconds
       updateDeviceStatus();
+      loadAllSchedules();
       lastStatusUpdate = millis();
     }
   }
@@ -189,7 +203,7 @@ void setupWiFi()
   {
     Serial.println("WiFi Connected Successfully!");
     Serial.println("IP: " + WiFi.localIP().toString());
-    playSuccessTone();
+    wifiSuccessConnected();
 
     // Set maximum transmit power for better range
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
@@ -201,7 +215,7 @@ void setupWiFi()
   {
     Serial.println("Failed to connect to WiFi. Starting in offline mode.");
     isOffline = true;
-    playErrorTone();
+    wifiFailConnected();
   }
 }
 
@@ -223,7 +237,7 @@ bool checkWiFiConnection()
       {
         Serial.println("WiFi reconnected!");
         isOffline = false;
-        playSuccessTone();
+        wifiSuccessConnected();
 
         // Reconnect to Firebase if we were offline
         if (signUpOK == false)
@@ -241,7 +255,7 @@ bool checkWiFiConnection()
 
         if (!isOffline)
         {
-          playErrorTone();
+          wifiFailConnected();
           isOffline = true;
         }
 
@@ -290,12 +304,12 @@ void connectToFirebase()
   {
     Serial.println("Firebase SignUp berhasil");
     signUpOK = true;
-    playSuccessTone();
+    firebaseSuccessConnected();
   }
   else
   {
     Serial.println("SignUp GAGAL: " + String(config.signer.signupError.message.c_str()));
-    playErrorTone();
+    firebaseFailConnected();
     isOffline = true;
     return;
   }
@@ -407,86 +421,109 @@ void loadInitialLampStates()
 
 void loadAllSchedules()
 {
-  // Check all schedule entries
-  FirebaseData scheduleData;
-
   Serial.println("Loading lamp schedules...");
 
-  // Try to load schedules for each lamp
   for (int i = 1; i <= 4; i++)
   {
-    int retries = 0;
-    const int maxRetries = 3;
-    bool scheduleLoaded = false;
+    FirebaseData scheduleData;
+    String onPath = "/jadwal/" + String(i) + "/on";
+    String offPath = "/jadwal/" + String(i) + "/off";
 
-    while (retries < maxRetries && !scheduleLoaded)
+    String onTime, offTime;
+    bool onExists = false, offExists = false;
+
+    // Get ON time - dengan debugging tambahan
+    if (Firebase.getString(scheduleData, onPath))
     {
-      if (Firebase.getJSON(scheduleData, "/jadwal/" + String(i)))
+      onTime = scheduleData.stringData();
+      Serial.println("Raw ON time data for lamp " + String(i) + ": " + onTime);
+
+      // Hapus quotes tambahan
+      onTime.replace("\"", "");
+      onExists = true;
+      Serial.println("Lamp " + String(i) + " ON time cleaned: " + onTime);
+    }
+    else
+    {
+      Serial.println("Failed to get ON schedule for lamp " + String(i) + ": " + scheduleData.errorReason());
+    }
+
+    // Get OFF time - dengan debugging tambahan
+    if (Firebase.getString(scheduleData, offPath))
+    {
+      offTime = scheduleData.stringData();
+      Serial.println("Raw OFF time data for lamp " + String(i) + ": " + offTime);
+
+      // Hapus quotes tambahan
+      offTime.replace("\"", "");
+      offExists = true;
+      Serial.println("Lamp " + String(i) + " OFF time cleaned: " + offTime);
+    }
+    else
+    {
+      Serial.println("Failed to get OFF schedule for lamp " + String(i) + ": " + scheduleData.errorReason());
+    }
+
+    // Jika keduanya ada, parsing waktu dan atur jadwal
+    if (onExists && offExists)
+    {
+      if (parseTimeString(onTime, lampSchedules[i - 1].onTime) &&
+          parseTimeString(offTime, lampSchedules[i - 1].offTime))
       {
-        String lampScheduleStr = scheduleData.jsonString();
-        Serial.println("Schedule data for lamp " + String(i) + ": " + lampScheduleStr);
+        lampSchedules[i - 1].hasSchedule = true;
 
-        if (lampScheduleStr.indexOf("\"on\"") > 0 &&
-            lampScheduleStr.indexOf("\"off\"") > 0)
-        {
-
-          // Extract on time
-          int onStart = lampScheduleStr.indexOf("\"on\"") + 6; // Skip "on":"
-          String onTimeStr = lampScheduleStr.substring(onStart, lampScheduleStr.indexOf("\"", onStart));
-
-          // Extract off time
-          int offStart = lampScheduleStr.indexOf("\"off\"") + 7; // Skip "off":"
-          String offTimeStr = lampScheduleStr.substring(offStart, lampScheduleStr.indexOf("\"", offStart));
-
-          if (parseTimeString(onTimeStr, lampSchedules[i - 1].onTime) &&
-              parseTimeString(offTimeStr, lampSchedules[i - 1].offTime))
-          {
-            lampSchedules[i - 1].hasSchedule = true;
-            scheduleLoaded = true;
-
-            Serial.println("Schedule for lamp " + String(i) + " - On: " +
-                           String(lampSchedules[i - 1].onTime.hour) + ":" +
-                           String(lampSchedules[i - 1].onTime.minute) +
-                           ", Off: " +
-                           String(lampSchedules[i - 1].offTime.hour) + ":" +
-                           String(lampSchedules[i - 1].offTime.minute));
-          }
-        }
-        else
-        {
-          Serial.println("No valid schedule for lamp " + String(i));
-          scheduleLoaded = true; // Count as loaded even if no schedule
-        }
+        Serial.println("Schedule set for lamp " + String(i) +
+                       " - On: " + String(lampSchedules[i - 1].onTime.hour) + ":" +
+                       String(lampSchedules[i - 1].onTime.minute) +
+                       ", Off: " + String(lampSchedules[i - 1].offTime.hour) + ":" +
+                       String(lampSchedules[i - 1].offTime.minute));
       }
       else
       {
-        Serial.println("Failed to get schedule for lamp " + String(i) + ", attempt " + String(retries + 1));
-        retries++;
-
-        if (retries >= maxRetries)
-        {
-          Serial.println("Failed to get schedule after maximum retries");
-        }
-
-        delay(500);
+        Serial.println("Failed to parse schedule times for lamp " + String(i));
+        lampSchedules[i - 1].hasSchedule = false;
       }
+    }
+    else
+    {
+      Serial.println("No complete schedule found for lamp " + String(i));
+      lampSchedules[i - 1].hasSchedule = false;
     }
   }
 }
 
 bool parseTimeString(String timeStr, ScheduleTime &time)
 {
-  if (timeStr.length() >= 5)
-  {
-    time.hour = timeStr.substring(0, 2).toInt();
-    time.minute = timeStr.substring(3, 5).toInt();
+  // Bersihkan string dari karakter yang tidak diinginkan
+  timeStr.replace("\"", "");
+  timeStr.trim();
 
-    // Validate time values
+  // Penanganan format seperti "12:00" dan sebagainya
+  int colonPos = timeStr.indexOf(':');
+  if (colonPos > 0)
+  {
+    String hourStr = timeStr.substring(0, colonPos);
+    String minStr = timeStr.substring(colonPos + 1);
+
+    // Bersihkan dari quotes tambahan atau whitespace
+    hourStr.trim();
+    minStr.trim();
+
+    time.hour = hourStr.toInt();
+    time.minute = minStr.toInt();
+
+    Serial.print("Parsed time: ");
+    Serial.print(time.hour);
+    Serial.print(":");
+    Serial.println(time.minute);
+
+    // Validasi nilai waktu
     if (time.hour >= 0 && time.hour <= 23 && time.minute >= 0 && time.minute <= 59)
     {
       return true;
     }
   }
+
   Serial.println("Invalid time format: " + timeStr);
   return false;
 }
@@ -591,40 +628,75 @@ void handleSchedules()
 
   int currentHour = timeinfo.tm_hour;
   int currentMinute = timeinfo.tm_min;
-  int currentTimeInMinutes = currentHour * 60 + currentMinute;
 
-  // Check each lamp's schedule
+  Serial.print("Checking schedules at: ");
+  Serial.print(currentHour);
+  Serial.print(":");
+  Serial.println(currentMinute);
+
   for (int i = 0; i < 4; i++)
   {
     if (lampSchedules[i].hasSchedule)
     {
-      int onTimeInMinutes = lampSchedules[i].onTime.hour * 60 + lampSchedules[i].onTime.minute;
-      int offTimeInMinutes = lampSchedules[i].offTime.hour * 60 + lampSchedules[i].offTime.minute;
+      Serial.print("Lamp ");
+      Serial.print(i + 1);
+      Serial.print(" schedule - On: ");
+      Serial.print(lampSchedules[i].onTime.hour);
+      Serial.print(":");
+      Serial.print(lampSchedules[i].onTime.minute);
+      Serial.print(", Off: ");
+      Serial.print(lampSchedules[i].offTime.hour);
+      Serial.print(":");
+      Serial.println(lampSchedules[i].offTime.minute);
 
-      // Check if we need to turn this lamp on
-      if (currentTimeInMinutes == onTimeInMinutes)
+      // Cek apakah waktu saat ini sesuai dengan jadwal ON
+      if (currentHour == lampSchedules[i].onTime.hour &&
+          currentMinute == lampSchedules[i].onTime.minute)
       {
-        Serial.println("Schedule ON for lamp " + String(i + 1));
+        Serial.println("*** ACTIVATING ON schedule for lamp " + String(i + 1));
         lampStates[i] = true;
 
-        // Try to update Firebase if online
+        // Update Firebase jika online
         if (!isOffline && Firebase.ready())
         {
-          Firebase.setBool(fbdo, "/lampu/" + String(i + 1), true);
+          if (Firebase.setBool(fbdo, "/lampu/" + String(i + 1), true))
+          {
+            Serial.println("Firebase lamp state updated successfully");
+          }
+          else
+          {
+            Serial.println("Failed to update Firebase: " + fbdo.errorReason());
+          }
         }
+
+        // Update relay state segera
+        updateRelays();
+        playSuccessTone(); // Tambahkan notifikasi audio
       }
 
-      // Check if we need to turn this lamp off
-      if (currentTimeInMinutes == offTimeInMinutes)
+      // Cek apakah waktu saat ini sesuai dengan jadwal OFF
+      if (currentHour == lampSchedules[i].offTime.hour &&
+          currentMinute == lampSchedules[i].offTime.minute)
       {
-        Serial.println("Schedule OFF for lamp " + String(i + 1));
+        Serial.println("*** ACTIVATING OFF schedule for lamp " + String(i + 1));
         lampStates[i] = false;
 
-        // Try to update Firebase if online
+        // Update Firebase jika online
         if (!isOffline && Firebase.ready())
         {
-          Firebase.setBool(fbdo, "/lampu/" + String(i + 1), false);
+          if (Firebase.setBool(fbdo, "/lampu/" + String(i + 1), false))
+          {
+            Serial.println("Firebase lamp state updated successfully");
+          }
+          else
+          {
+            Serial.println("Failed to update Firebase: " + fbdo.errorReason());
+          }
         }
+
+        // Update relay state segera
+        updateRelays();
+        playTone(200); // Tambahkan notifikasi audio untuk OFF
       }
     }
   }
@@ -679,15 +751,51 @@ void handleSoundSensor()
 void updateRelays()
 {
   // Relays are typically active LOW
-  digitalWrite(RELAY_1, lampStates[0] ? HIGH : LOW);
-  digitalWrite(RELAY_2, lampStates[1] ? HIGH : LOW);
-  digitalWrite(RELAY_3, lampStates[2] ? HIGH : LOW);
-  digitalWrite(RELAY_4, lampStates[3] ? HIGH : LOW);
+  digitalWrite(RELAY_1, lampStates[0] ? LOW : HIGH);
+  digitalWrite(RELAY_2, lampStates[1] ? LOW : HIGH);
+  digitalWrite(RELAY_3, lampStates[2] ? LOW : HIGH);
+  digitalWrite(RELAY_4, lampStates[3] ? LOW : HIGH);
 }
 
-void playTone(int duration)
+// Fungsi tambahan untuk debugging jadwal
+void printAllSchedules()
 {
-  tone(BUZZER_PIN, 1000, duration);
+  Serial.println("\n===== CURRENT SCHEDULES =====");
+  for (int i = 0; i < 4; i++)
+  {
+    Serial.print("Lamp ");
+    Serial.print(i + 1);
+    Serial.print(": ");
+
+    if (lampSchedules[i].hasSchedule)
+    {
+      Serial.print("ON at ");
+      Serial.print(lampSchedules[i].onTime.hour);
+      Serial.print(":");
+      if (lampSchedules[i].onTime.minute < 10)
+        Serial.print("0");
+      Serial.print(lampSchedules[i].onTime.minute);
+
+      Serial.print(", OFF at ");
+      Serial.print(lampSchedules[i].offTime.hour);
+      Serial.print(":");
+      if (lampSchedules[i].offTime.minute < 10)
+        Serial.print("0");
+      Serial.println(lampSchedules[i].offTime.minute);
+    }
+    else
+    {
+      Serial.println("No schedule");
+    }
+  }
+  Serial.println("============================\n");
+}
+
+void playTone(int frequency, int duration)
+{
+  tone(buzzer, frequency, duration);
+  delay(duration * 1.3); // jeda sedikit setelah tiap nada
+  noTone(buzzer);
 }
 
 void playSuccessTone()
@@ -704,4 +812,36 @@ void playErrorTone()
   tone(BUZZER_PIN, 500, 200);
   delay(200);
   tone(BUZZER_PIN, 500, 200);
+}
+
+// Sound Wifi Success Connected
+void wifiSuccessConnected()
+{
+  playTone(1200, 100);
+  playTone(1500, 100);
+  playTone(1700, 150);
+}
+
+// Sound Wifi Fail Connected
+void wifiFailConnected()
+{
+  playTone(500, 300);
+  playTone(300, 300);
+  playTone(100, 400);
+}
+
+// Sound  Firebase Success Connected
+void firebaseSuccessConnected()
+{
+  playTone(784, 100);
+  playTone(988, 100);
+  playTone(1175, 150);
+}
+
+// Sound  Firebase Fail Connected
+void firebaseFailConnected()
+{
+  playTone(330, 300);
+  playTone(294, 300);
+  playTone(220, 400);
 }
