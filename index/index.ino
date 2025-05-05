@@ -36,12 +36,14 @@ FirebaseConfig config;
 bool signUpOK = false;
 bool isOffline = false;
 bool lampStates[4] = {false, false, false, false};
+
+// Sound detection variables
 unsigned long lastSoundTime = 0;
-const int soundThreshold = 3000;
-unsigned long soundDetectionInterval = 1000;
-int soundCount = 0;
-unsigned long soundCountResetTime = 0;
-bool offlineControlActive = false;
+const int soundThreshold = 3000;            // Mungkin perlu disesuaikan dengan sensitivitas sensor
+unsigned long soundDetectionInterval = 300; // Interval minimal antar tepukan (ms)
+unsigned long lastTepukTime = 0;
+const int tepukTimeWindow = 3000; // Jendela waktu 3 detik untuk mendeteksi semua tepukan
+int tepukCount = 0;
 
 // WiFi connection stability variables
 unsigned long lastReconnectAttempt = 0;
@@ -69,14 +71,9 @@ LampSchedule lampSchedules[4]; // Array to store schedules for 4 lamps
 
 // Function Prototypes
 void handleSchedules();
-void playTone(int duration);
+void playTone(int frequency, int duration);
 void playSuccessTone();
 void playErrorTone();
-void playBuzzerTone(int frequency, int duration);
-void wifiSuccessConnected();
-void wifiFailConnected();
-void firebaseSuccessConnected();
-void firebaseFailConnected();
 void handleSoundSensor();
 void updateRelays();
 void connectToFirebase();
@@ -88,6 +85,7 @@ bool checkWiFiConnection();
 void setupWiFi();
 void printAllSchedules();
 void updateWiFiLED(bool connected);
+void processTepukAction(int count);
 
 void setup()
 {
@@ -96,21 +94,32 @@ void setup()
 
   Serial.println("\n\n===== Smart Lighting System Starting =====");
 
-  // Initialize pins
+  // Langkah 1: Konfigurasi pin relay sebagai OUTPUT terlebih dahulu
   pinMode(RELAY_1, OUTPUT);
   pinMode(RELAY_2, OUTPUT);
   pinMode(RELAY_3, OUTPUT);
   pinMode(RELAY_4, OUTPUT);
-  pinMode(SOUND_SENSOR_PIN, INPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(WIFI_LED, OUTPUT); // Initialize WiFi LED pin
 
-  // Set initial state of relays (HIGH = OFF for active low relays)
+  // Langkah 2: Segera atur relay ke kondisi OFF (HIGH untuk active LOW relay)
+  // Letakkan ini seawal mungkin dalam kode setup
   digitalWrite(RELAY_1, HIGH);
   digitalWrite(RELAY_2, HIGH);
   digitalWrite(RELAY_3, HIGH);
   digitalWrite(RELAY_4, HIGH);
+
+  // Konfigurasi pin lainnya
+  pinMode(SOUND_SENSOR_PIN, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(WIFI_LED, OUTPUT);   // Initialize WiFi LED pin
   digitalWrite(WIFI_LED, LOW); // Turn OFF WiFi LED initially
+
+  // Verifikasi status relay - tambahkan delay kecil dan cetak status
+  delay(100);
+  Serial.println("Relay status after initialization:");
+  Serial.println("Relay 1: " + String(digitalRead(RELAY_1) == HIGH ? "OFF" : "ON"));
+  Serial.println("Relay 2: " + String(digitalRead(RELAY_2) == HIGH ? "OFF" : "ON"));
+  Serial.println("Relay 3: " + String(digitalRead(RELAY_3) == HIGH ? "OFF" : "ON"));
+  Serial.println("Relay 4: " + String(digitalRead(RELAY_4) == HIGH ? "OFF" : "ON"));
 
   // Initialize schedules
   for (int i = 0; i < 4; i++)
@@ -151,6 +160,9 @@ void setup()
     updateWiFiLED(false); // Turn off WiFi LED as we're offline
     playErrorTone();
   }
+
+  // Pastikan relay tetap OFF setelah semua inisialisasi
+  updateRelays();
 }
 
 void loop()
@@ -221,7 +233,7 @@ void setupWiFi()
     Serial.println("WiFi Connected Successfully!");
     Serial.println("IP: " + WiFi.localIP().toString());
     updateWiFiLED(true); // Turn ON WiFi LED
-    wifiSuccessConnected();
+    playSuccessTone();
 
     // Set maximum transmit power for better range
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
@@ -234,7 +246,7 @@ void setupWiFi()
     Serial.println("Failed to connect to WiFi. Starting in offline mode.");
     isOffline = true;
     updateWiFiLED(false); // Turn OFF WiFi LED
-    wifiFailConnected();
+    playErrorTone();
   }
 }
 
@@ -257,7 +269,7 @@ bool checkWiFiConnection()
         Serial.println("WiFi reconnected!");
         isOffline = false;
         updateWiFiLED(true); // Turn ON WiFi LED
-        wifiSuccessConnected();
+        playSuccessTone();
 
         // Reconnect to Firebase if we were offline
         if (signUpOK == false)
@@ -275,7 +287,7 @@ bool checkWiFiConnection()
 
         if (!isOffline)
         {
-          wifiFailConnected();
+          playErrorTone();
           updateWiFiLED(false); // Turn OFF WiFi LED
           isOffline = true;
         }
@@ -325,12 +337,12 @@ void connectToFirebase()
   {
     Serial.println("Firebase SignUp berhasil");
     signUpOK = true;
-    firebaseSuccessConnected();
+    playSuccessTone();
   }
   else
   {
     Serial.println("SignUp GAGAL: " + String(config.signer.signupError.message.c_str()));
-    firebaseFailConnected();
+    playErrorTone();
     isOffline = true;
     return;
   }
@@ -717,7 +729,7 @@ void handleSchedules()
 
         // Update relay state segera
         updateRelays();
-        playTone(200); // Tambahkan notifikasi audio untuk OFF
+        playTone(1000, 200); // Nada singkat untuk OFF
       }
     }
   }
@@ -727,45 +739,97 @@ void handleSoundSensor()
 {
   int soundValue = analogRead(SOUND_SENSOR_PIN);
 
-  // Reset sound count if timeout
-  if (millis() - soundCountResetTime > 2000)
+  // Jika sudah cukup tepukan dan waktu tunggu habis, proses tepukan
+  if (tepukCount > 0 && millis() - lastTepukTime > tepukTimeWindow)
   {
-    soundCount = 0;
+    // Proses jumlah tepukan yang sudah terkumpul
+    processTepukAction(tepukCount);
+    tepukCount = 0; // Reset jumlah tepukan setelah diproses
+    return;
   }
 
-  // Detect loud sound (clap)
+  // Deteksi suara keras (tepukan)
   if (soundValue > soundThreshold)
   {
     if (millis() - lastSoundTime > soundDetectionInterval)
     {
       Serial.println("Sound detected! Value: " + String(soundValue));
       lastSoundTime = millis();
-      soundCount++;
-      soundCountResetTime = millis();
 
-      // If offline mode and detected 2 claps, toggle all lights
-      if (isOffline && soundCount >= 2)
+      // Tambah jumlah tepukan
+      tepukCount++;
+      lastTepukTime = millis();
+
+      // Play tone untuk konfirmasi tepukan terdeteksi
+      playTone(2000, 50);
+
+      Serial.println("Tepuk terdeteksi: " + String(tepukCount));
+    }
+  }
+}
+
+void processTepukAction(int count)
+{
+  Serial.println("Memproses " + String(count) + " tepukan");
+
+  // Hanya di mode offline kita proses tepukan
+  if (isOffline)
+  {
+    // Tentukan lampu mana yang akan dipengaruhi berdasarkan jumlah tepukan
+    if (count >= 1 && count <= 4)
+    {
+      // Toggle lampu individual (1-4)
+      int lampIndex = count - 1;
+      lampStates[lampIndex] = !lampStates[lampIndex];
+
+      Serial.println("Toggle lampu " + String(count) + " menjadi " +
+                     (lampStates[lampIndex] ? "HIDUP" : "MATI"));
+
+      // Mainkan nada konfirmasi
+      if (lampStates[lampIndex])
       {
-        soundCount = 0;
-        offlineControlActive = !offlineControlActive;
+        playSuccessTone();
+      }
+      else
+      {
+        playTone(1000, 200);
+      }
+    }
+    else if (count == 5)
+    {
+      // Toggle semua lampu bersama-sama
+      bool newState = !lampStates[0]; // Gunakan kebalikan dari lampu 1 sebagai status target
 
-        // Set all lights to same state in offline mode
-        for (int i = 0; i < 4; i++)
-        {
-          lampStates[i] = offlineControlActive;
-        }
+      for (int i = 0; i < 4; i++)
+      {
+        lampStates[i] = newState;
+      }
 
-        // Confirm with buzzer
-        if (offlineControlActive)
+      Serial.println("Toggle SEMUA lampu menjadi " + String(newState ? "HIDUP" : "MATI"));
+
+      // Mainkan nada konfirmasi khusus untuk semua lampu
+      if (newState)
+      {
+        // Nada khusus untuk semua lampu hidup
+        for (int i = 0; i < 3; i++)
         {
-          playSuccessTone();
+          playTone(1200, 100);
+          delay(50);
         }
-        else
+      }
+      else
+      {
+        // Nada khusus untuk semua lampu mati
+        for (int i = 0; i < 3; i++)
         {
-          playTone(200);
+          playTone(800, 100);
+          delay(50);
         }
       }
     }
+
+    // Update relay setelah perubahan status
+    updateRelays();
   }
 }
 
@@ -812,12 +876,9 @@ void printAllSchedules()
   Serial.println("============================\n");
 }
 
-void playTone(int duration)
-{
-  tone(BUZZER_PIN, 1000, duration);
-  delay(duration + 50);
-}
+// FUNGSI BUZZER YANG DISEDERHANAKAN
 
+// Fungsi dasar untuk memainkan nada
 void playTone(int frequency, int duration)
 {
   tone(BUZZER_PIN, frequency, duration);
@@ -825,50 +886,19 @@ void playTone(int frequency, int duration)
   noTone(BUZZER_PIN);
 }
 
+// Fungsi untuk nada sukses/positif
 void playSuccessTone()
 {
-  tone(BUZZER_PIN, 1000, 100);
-  delay(100);
-  tone(BUZZER_PIN, 1500, 100);
-  delay(100);
-  tone(BUZZER_PIN, 2000, 100);
+  // Nada sukses - 3 nada naik
+  playTone(1000, 100);
+  playTone(1500, 100);
+  playTone(2000, 100);
 }
 
+// Fungsi untuk nada error/negatif
 void playErrorTone()
 {
-  tone(BUZZER_PIN, 500, 200);
-  delay(200);
-  tone(BUZZER_PIN, 500, 200);
-}
-
-// Sound Wifi Success Connected
-void wifiSuccessConnected()
-{
-  playTone(1200, 100);
-  playTone(1500, 100);
-  playTone(1700, 150);
-}
-
-// Sound Wifi Fail Connected
-void wifiFailConnected()
-{
-  playTone(500, 300);
+  // Nada error - 2 nada rendah
+  playTone(500, 200);
   playTone(300, 300);
-  playTone(100, 400);
-}
-
-// Sound  Firebase Success Connected
-void firebaseSuccessConnected()
-{
-  playTone(784, 100);
-  playTone(988, 100);
-  playTone(1175, 150);
-}
-
-// Sound  Firebase Fail Connected
-void firebaseFailConnected()
-{
-  playTone(330, 300);
-  playTone(294, 300);
-  playTone(220, 400);
 }
